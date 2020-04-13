@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dateutil.parser import parse
 import regex as re
-import logging
+from hw2.logger import logger_info, logger_error
 
 # лучше вместо глобальных констант, создать структуры с интерфейсом
 # обновления элементов и форматов
@@ -17,14 +17,6 @@ OPERATORS_CODE = {900, 901, 902, 903, 904, 905, 906, 908, 909, 910,
 DOC_TYPE = {"паспорт"}
 INAPROPRIATE_SYMBOLS = r"[a-zA-Z\u0400-\u04FF.!@?#$%&:;*\,\/;\=[\\\]\^_{|}<>]"
 
-logger_info = logging.getLogger("Patient")
-logger_info.setLevel(logging.INFO)
-
-handler = logging.FileHandler('status.txt', 'w', 'utf-8')
-formatter = logging.Formatter("%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s")
-handler.setFormatter(formatter)
-logger_info.addHandler(handler)
-
 
 class BaseDescriptor(ABC):
     """
@@ -36,11 +28,10 @@ class BaseDescriptor(ABC):
         self.name = name
         self.value = None
 
-    def log_except(self):
-        pass
-
-    @abstractmethod
     def __get__(self, instance, owner):
+        return instance.__dict__[self.name]
+
+    def log_except(self):
         pass
 
     @abstractmethod
@@ -57,9 +48,6 @@ class StringDescriptor(BaseDescriptor):
         Формат имени предполагает отсутствие цифр и небуквенных
         символов, количество уникальнх символов > 2
     """
-
-    def __get__(self, instance, owner):
-        return instance.__dict__[self.name]
 
     def __set__(self, instance, value):
         if self.check_name(value):
@@ -94,14 +82,16 @@ class DateDescriptor(BaseDescriptor):
             instance.__dict__[self.name] = tmp.date()
             logger_info.info("Date was changed")
         else:
+            logger_error.error(f"Invalid date: {value}")
             raise ValueError("input not str type")
-
-    def __get__(self, instance, owner):
-        return instance.__dict__[self.name]
 
     @staticmethod
     def check_date(value):
         if not isinstance(value, str):
+            return False
+        try:
+            parse(value)
+        except ValueError:
             return False
         return True
 
@@ -118,10 +108,8 @@ class PhoneDescriptor(BaseDescriptor):
             instance.__dict__[self.name] = number
             logger_info.info("Phone was changed")
         else:
+            logger_error.error(f"Invalid number: {value}")
             raise ValueError("Invalid number")
-
-    def __get__(self, instance, owner):
-        return instance.__dict__[self.name]
 
     @staticmethod
     def check_phone(number):
@@ -142,20 +130,19 @@ class PhoneDescriptor(BaseDescriptor):
 
 class DocDescriptor(BaseDescriptor):
 
-    def __get__(self, instance, owner):
-        return instance.__dict__[self.name]
-
     def __set__(self, instance, value):
         if self.name == "document_id":
             res, status = self.check_id(value)
             if status:
                 instance.__dict__[self.name] = res
             else:
+                logger_error.error(f"Invalid id: {value}")
                 raise ValueError("Invalid ID")
         elif self.name == "document_type":
             if self.check_doc(value):
                 instance.__dict__[self.name] = value
             else:
+                logger_error.error(f"Invalid document: {value}")
                 raise ValueError("Invalid document")
 
     @staticmethod

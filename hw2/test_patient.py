@@ -81,6 +81,8 @@ class TestPatient(unittest.TestCase):
                          "+7-916-000-00-00", "паспорт", "4514 000000")
         with self.assertRaises(ValueError):
             simple.document_id = "4514 *** 000000"
+        simple.document_id = "4514 920000"
+        self.assertEqual(simple.document_id, "4514920000")
         print("Id check: Done")
 
 
