@@ -1,7 +1,11 @@
 from abc import ABC, abstractmethod
 from dateutil.parser import parse
 import regex as re
-from hw2.logger import logger_info, logger_error
+import logging
+import os
+from hw2.homework.logger import logger_error, logger_info, handler, handler_error
+
+from hw2.homework.config import PHONE_FORMAT, DRIVER_LICENSE_TYPE, DRIVER_LICENSE_FORMAT, PASSPORT_TYPE
 
 # лучше вместо глобальных констант, создать структуры с интерфейсом
 # обновления элементов и форматов
@@ -14,14 +18,14 @@ OPERATORS_CODE = {900, 901, 902, 903, 904, 905, 906, 908, 909, 910,
                   978, 980, 981, 982, 983, 984, 985, 986, 987, 988,
                   989, 991, 992, 993, 994, 995, 996, 997, 999}
 
-DOC_TYPE = {"паспорт"}
-INAPROPRIATE_SYMBOLS = r"[a-zA-Z\u0400-\u04FF.!@?#$%&:;*\,\/;\=[\\\]\^_{|}<>]"
+DOC_TYPE = {"паспорт": 10, "заграничный паспорт": 9,
+            "водительское удостоверение": 10}
+INAPROPRIATE_SYMBOLS = r"[a-zA-Z\u0400-\u04FF.!@?#$%&:;*\,\;\=[\\\]\^_{|}<>]"
 
 
 class BaseDescriptor(ABC):
     """
-        Базовый дескриптор реализует запись в
-        лог исключений и магический метод set
+        Базовый дескриптор
     """
 
     def __set_name__(self, owner, name):
@@ -31,8 +35,11 @@ class BaseDescriptor(ABC):
     def __get__(self, instance, owner):
         return instance.__dict__[self.name]
 
-    def log_except(self):
-        pass
+    @staticmethod
+    def check_type(instance, value):
+        if not isinstance(value, str):
+            instance.logger_error.error(f"Invalid type")
+            raise TypeError("Not string")
 
     @abstractmethod
     def __set__(self, instance, value):
@@ -43,25 +50,26 @@ class StringDescriptor(BaseDescriptor):
     """
         Дескриптор данных для first_name, last_name.
         В случае некорректного формата данных выбрасвает
-        ошибку ValueError, все ошибки логгируются в exceptions.
+        ошибку ValueError, все ошибки логируются в errors.
 
         Формат имени предполагает отсутствие цифр и небуквенных
         символов, количество уникальнх символов > 2
     """
 
     def __set__(self, instance, value):
+        self.check_type(instance, value)
         if self.check_name(value):
             if self.name not in instance.__dict__:
                 instance.__dict__[self.name] = value
             else:
-                raise ValueError("Changes Forbidden")
+                instance.logger_error.error(f"Changes Forbidden")
+                raise AttributeError("Changes Forbidden")
         else:
+            instance.logger_error.error(f"Incorrect Name/Surname {value}")
             raise ValueError("Incorrect Name/Surname")
 
     @staticmethod
     def check_name(value):
-        if not isinstance(value, str):
-            return False
         if len(set(value)) < 2:
             return False
         if not value.isalpha():
@@ -71,24 +79,23 @@ class StringDescriptor(BaseDescriptor):
 
 class DateDescriptor(BaseDescriptor):
     """
-       Дата должна иметь тип datetime.
-       Принимает входные данные в формате дд.мм.гггг.
+       Дата имеет тип datetime.
        Исключения логгируем в exceptions
     """
 
     def __set__(self, instance, value):
+        self.check_type(instance, value)
         if self.check_date(value):
             tmp = parse(value)
-            instance.__dict__[self.name] = tmp.date()
-            logger_info.info("Date was changed")
+            instance.__dict__[self.name] = tmp
+            if instance.exists:
+                instance.logger_info.info(f"Date was changed ")
         else:
-            logger_error.error(f"Invalid date: {value}")
+            instance.logger_error.error(f"Invalid date: {value}")
             raise ValueError("input not str type")
 
     @staticmethod
     def check_date(value):
-        if not isinstance(value, str):
-            return False
         try:
             parse(value)
         except ValueError:
@@ -99,23 +106,23 @@ class DateDescriptor(BaseDescriptor):
 class PhoneDescriptor(BaseDescriptor):
     """
         Проверяет значение на соответствие формату.
-        Исключения логгируем в exceptions
+        Исключения логгируем в errors
     """
 
     def __set__(self, instance, value):
+        self.check_type(instance, value)
         number, status = self.check_phone(value)
         if status:
             instance.__dict__[self.name] = number
-            logger_info.info("Phone was changed")
+            if instance.exists:
+                instance.logger_info.info("Phone was changed")
+                del instance
         else:
-            logger_error.error(f"Invalid number: {value}")
+            instance.logger_error.error(f"Invalid number: {value}")
             raise ValueError("Invalid number")
 
     @staticmethod
     def check_phone(number):
-
-        if not isinstance(number, str):
-            return None, False
         parsed_num = re.findall(r"\d+", number)
         res = "8"
         res += ''.join(parsed_num)[1:]
@@ -129,29 +136,41 @@ class PhoneDescriptor(BaseDescriptor):
 
 
 class DocDescriptor(BaseDescriptor):
+    """
+        Дескриптор для типа документа и его номера
+        Содержит проверку для обоих полей
+    """
 
     def __set__(self, instance, value):
+
         if self.name == "document_id":
-            res, status = self.check_id(value)
+            self.check_type(instance, value)
+            res, status = self.check_id(value, DOC_TYPE[instance.document_type])
             if status:
                 instance.__dict__[self.name] = res
+                if not instance.exists:
+                    instance.exists = True
+                else:
+                    instance.logger_info.info("ID was changed")
             else:
-                logger_error.error(f"Invalid id: {value}")
+                instance.logger_error.error(f"Invalid id: {value}")
                 raise ValueError("Invalid ID")
+
         elif self.name == "document_type":
+            self.check_type(instance, value)
             if self.check_doc(value):
                 instance.__dict__[self.name] = value
+                if instance.exists:
+                    instance.logger_info.info("Type was changed")
             else:
-                logger_error.error(f"Invalid document: {value}")
+                instance.logger_error.error(f"Invalid document: {value}")
                 raise ValueError("Invalid document")
 
     @staticmethod
-    def check_id(number):
-        if not isinstance(number, str):
-            return None, False
+    def check_id(number, fix_size):
         parsed_num = re.findall(r"\d+", number)
         res = ''.join(parsed_num)
-        if len(res) != 10:
+        if len(res) != fix_size:
             return None, False
         if re.search(INAPROPRIATE_SYMBOLS, number) is not None:
             return None, False
@@ -159,8 +178,6 @@ class DocDescriptor(BaseDescriptor):
 
     @staticmethod
     def check_doc(doc_type):
-        if not isinstance(doc_type, str):
-            return False
         if str.lower(doc_type) not in DOC_TYPE:
             return False
         return True
@@ -172,7 +189,7 @@ class Patient:
         : имя(string) - должно состоять из букв
         : фамилия(string) - должно состоять из букв
         : дата рождения(string) - будем хранить в формате
-            dd.mm.yyyy
+            datetime
         : номер телефона(string) - соответствие формату,хранение в
             виде 8xxxxxxxxxxx
         : тип документа(string) - ограниченный набор(паспорт,
@@ -183,13 +200,14 @@ class Patient:
             номера формату документа
 
         Создание, изменние, сохранение объекта записываем
-            в лог changes
+            в лог info
         Исключения, случившиеся при работе,
-            в лог exceptions
+            в лог errors
 
         Хранить пациента нужно в csv, у класса
         есть метод save для дозаписи в файл
     """
+
     first_name = StringDescriptor()
     last_name = StringDescriptor()
     birth_date = DateDescriptor()
@@ -197,10 +215,13 @@ class Patient:
     document_type = DocDescriptor()
     document_id = DocDescriptor()
 
-    def __init__(self, first_name: str, last_name: str,
-                 birth_date: str, phone: str, document_type: str,
-                 document_id):
-        logger_info.info("Patient was written")
+    logger_info = logging.getLogger("Patient")
+    logger_error = logging.getLogger("Error")
+
+    def __init__(self, first_name, last_name, birth_date,
+                 phone, document_type, document_id: str,
+                 created=None):
+        self.exists = False
         self.first_name = first_name
         self.last_name = last_name
         self.birth_date = birth_date
@@ -208,17 +229,70 @@ class Patient:
         self.document_type = document_type
         self.document_id = document_id
 
+        if not created:
+            self.logger_info.info(f"{first_name} {last_name} was written")
 
-    @classmethod
-    def create(cls, first_name, last_name, birth_date, phone,
+    @staticmethod
+    def create(first_name, last_name, birth_date, phone,
                document_type, document_id):
-        logger_info.info("Patient was created")
-        return cls(first_name, last_name, birth_date, phone,
-                   document_type, document_id)
+        logger_info.info(f"{first_name} {last_name} was created")
+        return Patient(first_name, last_name, birth_date, phone,
+                       document_type, document_id, created=True)
 
     def save(self):
-        pass
+        data = [self.first_name, self.last_name, self.birth_date,
+                self.phone, self.document_type, self.document_id]
+        with open("table.csv", "a", encoding="utf-8") as table:
+            table.write(u",".join(map(str, data)) + u"\n")
+            self.logger_info.info(f"patient was saved")
+
+    def __del__(self):
+        handler.close()
+        handler_error.close()
+
+
+class CollectionIterator:
+
+    def __init__(self, path, limit=None):
+        self.collection = open(path, "r", encoding="utf-8")
+        self.limit = limit
+        self.line = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.has_more():
+            params = self.collection.readline()
+            self.line += 1
+            return Patient(*params.split(","))
+        else:
+            raise StopIteration()
+
+    def has_more(self):
+        if self.line == self.limit:
+            return False
+        if self.collection.tell() != os.fstat(
+                self.collection.fileno()).st_size:
+            return True
+        else:
+            return False
+
+    def __del__(self):
+        self.collection.close()
 
 
 class PatientCollection:
-    pass
+    """Берет данные из csv файла, поддерживает итерацию
+       ссодержит метод limit, возвращаюший итератор/генератор
+       первых n записей
+    """
+
+    def __init__(self, path):
+        self.path = path
+
+    def __iter__(self):
+        return CollectionIterator(self.path)
+
+    def limit(self, n):
+        return CollectionIterator(self.path, n)
