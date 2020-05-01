@@ -82,10 +82,8 @@ class TestArray(unittest.TestCase):
         self.assertEqual(class_str.count(3), None)
         self.assertEqual(class_str.count("h"), 1)
         self.assertEqual(class_str.count("l"), 2)
-
         arr_float_1 = ArrayList('f', [1.1, 2.2, 3.3, 1.1, 5.5])
         self.assertEqual(arr_float_1.count(1.1), 2)
-
         print("test count: done")
 
     def test_set_item(self):
