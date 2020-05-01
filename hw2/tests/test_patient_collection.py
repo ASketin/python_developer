@@ -2,9 +2,9 @@ import os
 
 import pytest
 
-from homework.config import PASSPORT_TYPE, CSV_PATH
-from homework.patient import PatientCollection, Patient
-from tests.constants import PATIENT_FIELDS
+from hw2.homework.config import PASSPORT_TYPE, CSV_PATH
+from hw2.homework.patient import PatientCollection, Patient
+from hw2.tests.constants import PATIENT_FIELDS
 
 GOOD_PARAMS = (
     ("Кондрат", "Рюрик", "1971-01-11", "79160000000", PASSPORT_TYPE, "0228 000000"),

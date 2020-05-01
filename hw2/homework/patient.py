@@ -29,16 +29,16 @@ class BaseDescriptor(ABC):
     """
 
     def __set_name__(self, owner, name):
-        self.name = name
-        self.value = None
+        self._name = name
+        self._value = None
 
     def __get__(self, instance, owner):
-        return instance.__dict__[self.name]
+        return instance.__dict__[self._name]
 
     @staticmethod
-    def check_type(instance, value):
+    def check_type(value):
         if not isinstance(value, str):
-            instance.logger_error.error(f"Invalid type")
+            logger_error.error(f"Invalid type")
             raise TypeError("Not string")
 
     @abstractmethod
@@ -53,25 +53,23 @@ class StringDescriptor(BaseDescriptor):
         ошибку ValueError, все ошибки логируются в errors.
 
         Формат имени предполагает отсутствие цифр и небуквенных
-        символов, количество уникальнх символов > 2
+        символов
     """
 
     def __set__(self, instance, value):
-        self.check_type(instance, value)
+        self.check_type(value)
         if self.check_name(value):
-            if self.name not in instance.__dict__:
-                instance.__dict__[self.name] = value
+            if self._name not in instance.__dict__:
+                instance.__dict__[self._name] = value
             else:
-                instance.logger_error.error(f"Changes Forbidden")
+                logger_error.error(f"Changes Forbidden")
                 raise AttributeError("Changes Forbidden")
         else:
-            instance.logger_error.error(f"Incorrect Name/Surname {value}")
+            logger_error.error(f"Incorrect Name/Surname {value}")
             raise ValueError("Incorrect Name/Surname")
 
     @staticmethod
     def check_name(value):
-        if len(set(value)) < 2:
-            return False
         if not value.isalpha():
             return False
         return True
@@ -80,18 +78,19 @@ class StringDescriptor(BaseDescriptor):
 class DateDescriptor(BaseDescriptor):
     """
        Дата имеет тип datetime.
-       Исключения логгируем в exceptions
+       Исключения логгируем в errors
     """
 
     def __set__(self, instance, value):
-        self.check_type(instance, value)
+        self.check_type(value)
         if self.check_date(value):
             tmp = parse(value)
-            instance.__dict__[self.name] = tmp
-            if instance.exists:
-                instance.logger_info.info(f"Date was changed ")
+            if self._name in instance.__dict__:
+                logger_info.info(f"Date was changed ")
+            instance.__dict__[self._name] = tmp
+
         else:
-            instance.logger_error.error(f"Invalid date: {value}")
+            logger_error.error(f"Invalid date: {value}")
             raise ValueError("input not str type")
 
     @staticmethod
@@ -110,15 +109,14 @@ class PhoneDescriptor(BaseDescriptor):
     """
 
     def __set__(self, instance, value):
-        self.check_type(instance, value)
-        number, status = self.check_phone(value)
-        if status:
-            instance.__dict__[self.name] = number
-            if instance.exists:
-                instance.logger_info.info("Phone was changed")
-                del instance
+        self.check_type(value)
+        number = self.check_phone(value)
+        if number is not None:
+            if self._name in instance.__dict__:
+                logger_info.info("Phone was changed")
+            instance.__dict__[self._name] = number
         else:
-            instance.logger_error.error(f"Invalid number: {value}")
+            logger_error.error(f"Invalid number: {value}")
             raise ValueError("Invalid number")
 
     @staticmethod
@@ -127,12 +125,12 @@ class PhoneDescriptor(BaseDescriptor):
         res = "8"
         res += ''.join(parsed_num)[1:]
         if len(res) != 11:
-            return None, False
+            return None
         if int(res[1:4]) not in OPERATORS_CODE:
-            return None, False
+            return None
         if re.search(INAPROPRIATE_SYMBOLS, number) is not None:
-            return None, False
-        return res, True
+            return None
+        return res
 
 
 class DocDescriptor(BaseDescriptor):
@@ -143,27 +141,25 @@ class DocDescriptor(BaseDescriptor):
 
     def __set__(self, instance, value):
 
-        if self.name == "document_id":
-            self.check_type(instance, value)
-            res, status = self.check_id(value, DOC_TYPE[instance.document_type])
-            if status:
-                instance.__dict__[self.name] = res
-                if not instance.exists:
-                    instance.exists = True
-                else:
-                    instance.logger_info.info("ID was changed")
+        if self._name == "document_id":
+            self.check_type(value)
+            res = self.check_id(value, DOC_TYPE[instance.document_type])
+            if res is not None:
+                if self._name in instance.__dict__:
+                    logger_info.info("ID was changed")
+                instance.__dict__[self._name] = res
             else:
-                instance.logger_error.error(f"Invalid id: {value}")
+                logger_error.error(f"Invalid id: {value}")
                 raise ValueError("Invalid ID")
 
-        elif self.name == "document_type":
-            self.check_type(instance, value)
+        elif self._name == "document_type":
+            self.check_type(value)
             if self.check_doc(value):
-                instance.__dict__[self.name] = value
-                if instance.exists:
-                    instance.logger_info.info("Type was changed")
+                if self._name in instance.__dict__:
+                    logger_info.info("Type was changed")
+                instance.__dict__[self._name] = value
             else:
-                instance.logger_error.error(f"Invalid document: {value}")
+                logger_error.error(f"Invalid document: {value}")
                 raise ValueError("Invalid document")
 
     @staticmethod
@@ -171,16 +167,24 @@ class DocDescriptor(BaseDescriptor):
         parsed_num = re.findall(r"\d+", number)
         res = ''.join(parsed_num)
         if len(res) != fix_size:
-            return None, False
+            return None
         if re.search(INAPROPRIATE_SYMBOLS, number) is not None:
-            return None, False
-        return res, True
+            return None
+        return res
 
     @staticmethod
     def check_doc(doc_type):
         if str.lower(doc_type) not in DOC_TYPE:
             return False
         return True
+
+
+def my_logging_decorator(method):
+    def method_wrapper(*args):
+        result = method(*args)
+        logger_info.info(f"Patient was {method.__name__}")
+        return result
+    return method_wrapper
 
 
 class Patient:
@@ -218,10 +222,9 @@ class Patient:
     logger_info = logging.getLogger("Patient")
     logger_error = logging.getLogger("Error")
 
+    @my_logging_decorator
     def __init__(self, first_name, last_name, birth_date,
-                 phone, document_type, document_id: str,
-                 created=None):
-        self.exists = False
+                 phone, document_type, document_id: str):
         self.first_name = first_name
         self.last_name = last_name
         self.birth_date = birth_date
@@ -229,22 +232,19 @@ class Patient:
         self.document_type = document_type
         self.document_id = document_id
 
-        if not created:
-            self.logger_info.info(f"{first_name} {last_name} was written")
 
     @staticmethod
     def create(first_name, last_name, birth_date, phone,
                document_type, document_id):
-        logger_info.info(f"{first_name} {last_name} was created")
         return Patient(first_name, last_name, birth_date, phone,
-                       document_type, document_id, created=True)
+                       document_type, document_id)
 
+    @my_logging_decorator
     def save(self):
         data = [self.first_name, self.last_name, self.birth_date,
                 self.phone, self.document_type, self.document_id]
         with open("table.csv", "a", encoding="utf-8") as table:
             table.write(u",".join(map(str, data)) + u"\n")
-            self.logger_info.info(f"patient was saved")
 
     def __del__(self):
         handler.close()

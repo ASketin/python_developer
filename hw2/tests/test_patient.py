@@ -5,10 +5,10 @@ import itertools
 
 import pytest
 
-from homework.config import GOOD_LOG_FILE, ERROR_LOG_FILE, CSV_PATH, PHONE_FORMAT, PASSPORT_TYPE, PASSPORT_FORMAT, \
+from hw2.homework.config import GOOD_LOG_FILE, ERROR_LOG_FILE, CSV_PATH, PHONE_FORMAT, PASSPORT_TYPE, PASSPORT_FORMAT, \
     INTERNATIONAL_PASSPORT_FORMAT, INTERNATIONAL_PASSPORT_TYPE, DRIVER_LICENSE_TYPE, DRIVER_LICENSE_FORMAT
-from homework.patient import Patient
-from tests.constants import GOOD_PARAMS, OTHER_GOOD_PARAMS, WRONG_PARAMS, PATIENT_FIELDS
+from hw2.homework.patient import Patient
+from hw2.tests.constants import GOOD_PARAMS, OTHER_GOOD_PARAMS, WRONG_PARAMS, PATIENT_FIELDS
 
 
 def get_len(file):
